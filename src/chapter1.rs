@@ -42,7 +42,7 @@ impl Point {
 
 impl Sub for &Point {
     type Output = Vector;
-    fn sub(self: Self, other: Self) -> Vector {
+    fn sub(self, other: Self) -> Vector {
         Vector::new(other.x - self.x, other.y - self.y)
     }
 }
@@ -57,7 +57,7 @@ impl<'a> Edge<'a> {
     }
 }
 
-pub fn slow_convex_hull<'a>(points: &'a [Point]) -> Vec<&'a Point> {
+pub fn slow_convex_hull(points: &[Point]) -> Vec<&Point> {
     let mut edges: Vec<Edge> = vec![];
     for p in points {
         for q in points {
@@ -104,11 +104,10 @@ pub fn convex_hull(points: &[Point]) -> Vec<Point> {
     let mut upper: Vec<Point> = vec![];
     upper.push(sorted[0]);
     upper.push(sorted[1]);
-    for i in 2..sorted.len() {
-        let p3 = sorted[i];
+    for p3 in sorted.iter().skip(2) {
         while upper.len() >= 2 {
             let &[p1, p2] = upper.last_chunk::<2>().unwrap();
-            let edge1 = &p3 - &p1;
+            let edge1 = p3 - &p1;
             let edge2 = &p2 - &p1;
             if edge1.signed_angle(&edge2) >= 0.0 {
                 upper.pop();
@@ -116,7 +115,7 @@ pub fn convex_hull(points: &[Point]) -> Vec<Point> {
                 break;
             }
         }
-        upper.push(p3);
+        upper.push(*p3);
     }
     let mut lower: Vec<Point> = vec![];
     lower.push(sorted[sorted.len() - 1]);
