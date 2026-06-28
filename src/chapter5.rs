@@ -192,36 +192,99 @@ where
         Self { arena, root }
     }
 
+    pub fn search(&self, min: Point<T, D>, max: Point<T, D>) -> Vec<Point<T, D>> {
+        let mut reported_values: Vec<Point<T, D>> = vec![];
+        Self::report_tree(&self.arena, &mut reported_values, self.root, 0, min, max);
+        reported_values
+    }
+
+    fn report_tree(
+        arena: &Arena<Point<T, D>>,
+        reported_values: &mut Vec<Point<T, D>>,
+        node: usize,
+        depth: usize,
+        min: Point<T, D>,
+        max: Point<T, D>,
+    ) {
+        let axis = depth % D;
+        if arena.nodes[node].is_leaf() {
+            if Self::point_contained(arena.nodes[node].value, min, max) {
+                reported_values.push(arena.nodes[node].value);
+            }
+        } else if arena.nodes[node].value[axis] >= min[axis] && arena.nodes[node].value[axis] < max[axis] {
+            Self::report_tree(
+                arena,
+                reported_values,
+                arena.nodes[node].left.unwrap(),
+                depth + 1,
+                min,
+                max,
+            );
+            Self::report_tree(
+                arena,
+                reported_values,
+                arena.nodes[node].right.unwrap(),
+                depth + 1,
+                min,
+                max,
+            );
+        } else if arena.nodes[node].value[axis] < min[axis] {
+            Self::report_tree(
+                arena,
+                reported_values,
+                arena.nodes[node].right.unwrap(),
+                depth + 1,
+                min,
+                max,
+            );
+        } else if arena.nodes[node].value[axis] >= max[axis] {
+            Self::report_tree(
+                arena,
+                reported_values,
+                arena.nodes[node].left.unwrap(),
+                depth + 1,
+                min,
+                max,
+            );
+        }
+    }
+
+    fn point_contained(point: Point<T, D>, min: Point<T, D>, max: Point<T, D>) -> bool {
+        point
+            .iter()
+            .zip(min.iter())
+            .zip(max.iter())
+            .all(|((vi, lo), hi)| vi >= lo && vi <= hi)
+    }
+
     pub fn print(&self)
     where
         T: fmt::Debug,
     {
-        println!("{:?}", self.arena.nodes[self.root].value);
-        if let Some(left) = self.arena.nodes[self.root].left {
-            self.print_node(left, "", true);
-        }
-        if let Some(right) = self.arena.nodes[self.root].right {
-            self.print_node(right, "", false);
-        }
+        self.print_node(self.root, "", None);
     }
 
-    fn print_node(&self, index: usize, prefix: &str, is_left: bool)
+    fn print_node(&self, index: usize, prefix: &str, is_left: Option<bool>)
     where
         T: fmt::Debug,
     {
         let node = &self.arena.nodes[index];
-        let connector = if is_left { "├── " } else { "└── " };
-        let new_prefix = format!("{}{}", prefix, if is_left { "│   " } else { "    " });
-        if node.is_leaf() {
-            println!("{}{}{:?}", prefix, connector, node.value);
-        } else {
-            println!("{}{}{:?}", prefix, connector, node.value);
-        }
+        let connector = match is_left {
+            None => "",
+            Some(true) => "├── ",
+            Some(false) => "└── ",
+        };
+        println!("{}{}{:?}", prefix, connector, node.value);
+        let new_prefix = match is_left {
+            None => String::new(),
+            Some(true) => format!("{}│   ", prefix),
+            Some(false) => format!("{}    ", prefix),
+        };
         if let Some(left) = node.left {
-            self.print_node(left, &new_prefix, true);
+            self.print_node(left, &new_prefix, Some(true));
         }
         if let Some(right) = node.right {
-            self.print_node(right, &new_prefix, false);
+            self.print_node(right, &new_prefix, Some(false));
         }
     }
 
@@ -253,10 +316,8 @@ where
                         }
                     })
                     .unzip();
-                let left = Self::build(arena, left, depth + 1);
-                let right = Self::build(arena, right, depth + 1);
-                arena.nodes[node].left = left;
-                arena.nodes[node].right = right;
+                arena.nodes[node].left = Self::build(arena, left, depth + 1);
+                arena.nodes[node].right = Self::build(arena, right, depth + 1);
                 Some(node)
             }
         }
