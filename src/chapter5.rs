@@ -38,21 +38,54 @@ impl<T> Arena<T> {
         self.nodes.len() - 1
     }
 
-    fn print_tree(&self, index: usize, prefix: &str, is_left: bool)
-    where
-        T: fmt::Display,
-    {
-        let node = &self.nodes[index];
-        let connector = if is_left { "├── " } else { "└── " };
-        println!("{}{}{}", prefix, connector, node.value);
-        let new_prefix = format!("{}{}", prefix, if is_left { "│   " } else { "    " });
-        if let Some(left) = node.left {
-            self.print_tree(left, &new_prefix, true);
-        }
-        if let Some(right) = node.right {
-            self.print_tree(right, &new_prefix, false);
-        }
+}
+
+fn fmt_bst_node<T: fmt::Display>(
+    arena: &Arena<T>,
+    f: &mut fmt::Formatter<'_>,
+    index: usize,
+    prefix: &str,
+    is_left: bool,
+) -> fmt::Result {
+    let node = &arena.nodes[index];
+    let connector = if is_left { "├── " } else { "└── " };
+    writeln!(f, "{}{}{}", prefix, connector, node.value)?;
+    let new_prefix = format!("{}{}", prefix, if is_left { "│   " } else { "    " });
+    if let Some(left) = node.left {
+        fmt_bst_node(arena, f, left, &new_prefix, true)?;
     }
+    if let Some(right) = node.right {
+        fmt_bst_node(arena, f, right, &new_prefix, false)?;
+    }
+    Ok(())
+}
+
+fn fmt_kd_node<T: fmt::Debug, const D: usize>(
+    arena: &Arena<Point<T, D>>,
+    f: &mut fmt::Formatter<'_>,
+    index: usize,
+    prefix: &str,
+    is_left: Option<bool>,
+) -> fmt::Result {
+    let node = &arena.nodes[index];
+    let connector = match is_left {
+        None => "",
+        Some(true) => "├── ",
+        Some(false) => "└── ",
+    };
+    writeln!(f, "{}{}{:?}", prefix, connector, node.value)?;
+    let new_prefix = match is_left {
+        None => String::new(),
+        Some(true) => format!("{}│   ", prefix),
+        Some(false) => format!("{}    ", prefix),
+    };
+    if let Some(left) = node.left {
+        fmt_kd_node(arena, f, left, &new_prefix, Some(true))?;
+    }
+    if let Some(right) = node.right {
+        fmt_kd_node(arena, f, right, &new_prefix, Some(false))?;
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -66,20 +99,6 @@ where
     T: Ord,
     T: Copy,
 {
-    pub fn print(&self)
-    where
-        T: fmt::Display,
-    {
-        let root = &self.arena.nodes[self.root];
-        println!("{}", root.value);
-        if let Some(left) = root.left {
-            self.arena.print_tree(left, "", true);
-        }
-        if let Some(right) = root.right {
-            self.arena.print_tree(right, "", false);
-        }
-    }
-
     pub fn new(mut points: Vec<T>) -> Self {
         points.sort();
         let mut arena = Arena::new();
@@ -151,6 +170,23 @@ where
                 Some(node)
             }
         }
+    }
+}
+
+impl<T> fmt::Display for BalancedBinarySearchTree<T>
+where
+    T: Ord + Copy + fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.arena.nodes[self.root].value)?;
+        let root = &self.arena.nodes[self.root];
+        if let Some(left) = root.left {
+            fmt_bst_node(&self.arena, f, left, "", true)?;
+        }
+        if let Some(right) = root.right {
+            fmt_bst_node(&self.arena, f, right, "", false)?;
+        }
+        Ok(())
     }
 }
 
@@ -257,37 +293,6 @@ where
             .all(|((vi, lo), hi)| vi >= lo && vi <= hi)
     }
 
-    pub fn print(&self)
-    where
-        T: fmt::Debug,
-    {
-        self.print_node(self.root, "", None);
-    }
-
-    fn print_node(&self, index: usize, prefix: &str, is_left: Option<bool>)
-    where
-        T: fmt::Debug,
-    {
-        let node = &self.arena.nodes[index];
-        let connector = match is_left {
-            None => "",
-            Some(true) => "├── ",
-            Some(false) => "└── ",
-        };
-        println!("{}{}{:?}", prefix, connector, node.value);
-        let new_prefix = match is_left {
-            None => String::new(),
-            Some(true) => format!("{}│   ", prefix),
-            Some(false) => format!("{}    ", prefix),
-        };
-        if let Some(left) = node.left {
-            self.print_node(left, &new_prefix, Some(true));
-        }
-        if let Some(right) = node.right {
-            self.print_node(right, &new_prefix, Some(false));
-        }
-    }
-
     fn build(arena: &mut Arena<Point<T, D>>, sorted_by_axes: Vec<Vec<Point<T, D>>>, depth: usize) -> Option<usize> {
         let axis = depth % D;
         match sorted_by_axes[axis].len() {
@@ -321,5 +326,14 @@ where
                 Some(node)
             }
         }
+    }
+}
+
+impl<T, const D: usize> fmt::Display for KdTree<T, D>
+where
+    T: PartialOrd + Clone + Copy + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_kd_node(&self.arena, f, self.root, "", None)
     }
 }

@@ -14,6 +14,6 @@ fn main() {
         [8.0, 8.0],  // p10
     ];
     let kdtree = KdTree::new(points);
-    kdtree.print();
+    print!("{}", kdtree);
     println!("{:?}", kdtree.search([5.0, 3.0], [9.0, 6.0]));
 }
