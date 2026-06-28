@@ -154,24 +154,52 @@ where
     }
 }
 
+type SortedAxes<T, const D: usize> = Vec<Vec<[T; D]>>;
+
 #[derive(Debug)]
-pub struct KdTree {
-    arena: Arena<(f64, f64)>,
+pub struct KdTree<T, const D: usize>
+where
+    T: PartialOrd,
+    T: Clone,
+    T: Copy,
+{
+    arena: Arena<[T; D]>,
     root: usize,
 }
 
-impl KdTree {
-    pub fn new(points: Vec<(f64, f64)>) -> Self {
+impl<const D: usize, T> KdTree<T, D>
+where
+    T: PartialOrd,
+    T: Clone,
+    T: Copy,
+{
+    pub fn new(points: Vec<[T; D]>) -> Self {
+        assert!(!points.is_empty(), "points must not be empty");
         let mut arena = Arena::new();
-        let root = Self::build(&mut arena, points, 0).expect("points must not be empty");
+        let sorted_by_axes: Vec<Vec<[T; D]>> = (0..D)
+            .map(|i| {
+                let mut ax = points.clone();
+                ax.sort_by(|a, b| {
+                    a[i].partial_cmp(&b[i])
+                        .unwrap()
+                        .then_with(|| a.iter().partial_cmp(b).unwrap())
+                });
+                ax
+            })
+            .collect();
+        let root = Self::build(&mut arena, sorted_by_axes, 0).expect("points must not be empty");
         Self { arena, root }
     }
 
-    pub fn print(&self) {
-        println!(
-            "({}, {})",
-            self.arena.nodes[self.root].value.0, self.arena.nodes[self.root].value.1
-        );
+    pub fn print(&self)
+    where
+        T: fmt::Debug,
+    {
+        if self.arena.nodes[self.root].is_leaf() {
+            println!("{:?}", self.arena.nodes[self.root].value);
+        } else {
+            println!("*");
+        }
         if let Some(left) = self.arena.nodes[self.root].left {
             self.print_node(left, "", true);
         }
@@ -180,11 +208,18 @@ impl KdTree {
         }
     }
 
-    fn print_node(&self, index: usize, prefix: &str, is_left: bool) {
+    fn print_node(&self, index: usize, prefix: &str, is_left: bool)
+    where
+        T: fmt::Debug,
+    {
         let node = &self.arena.nodes[index];
         let connector = if is_left { "├── " } else { "└── " };
-        println!("{}{}({}, {})", prefix, connector, node.value.0, node.value.1);
         let new_prefix = format!("{}{}", prefix, if is_left { "│   " } else { "    " });
+        if node.is_leaf() {
+            println!("{}{}{:?}", prefix, connector, node.value);
+        } else {
+            println!("{}{}*", prefix, connector);
+        }
         if let Some(left) = node.left {
             self.print_node(left, &new_prefix, true);
         }
@@ -193,20 +228,33 @@ impl KdTree {
         }
     }
 
-    fn build(arena: &mut Arena<(f64, f64)>, mut points: Vec<(f64, f64)>, depth: usize) -> Option<usize> {
-        match points.len() {
+    fn build(arena: &mut Arena<[T; D]>, sorted_by_axes: Vec<Vec<[T; D]>>, depth: usize) -> Option<usize> {
+        let axis = depth % D;
+        match sorted_by_axes[axis].len() {
             0 => None,
-            1 => Some(arena.add(points[0])),
+            1 => Some(arena.add(sorted_by_axes[axis][0])),
             n => {
-                if depth.is_multiple_of(2) {
-                    points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-                } else {
-                    points.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-                }
-                let split = n / 2;
-                let node = arena.add(points[split]);
-                let left = points[0..split].to_vec();
-                let right = points[split + 1..].to_vec();
+                let split = (n - 1) / 2;
+                let median = &sorted_by_axes[axis][split];
+                let node = arena.add(*median);
+                let (left, right): (SortedAxes<T, D>, SortedAxes<T, D>) = (0..D)
+                    .map(|i| {
+                        if i == axis {
+                            let left = &sorted_by_axes[i][0..=split];
+                            let right = &sorted_by_axes[i][split + 1..];
+                            (left.to_vec(), right.to_vec())
+                        } else {
+                            let (left, right): (Vec<[T; D]>, Vec<[T; D]>) = sorted_by_axes[i].iter().partition(|p| {
+                                p[axis]
+                                    .partial_cmp(&median[axis])
+                                    .unwrap()
+                                    .then_with(|| p.partial_cmp(&median).unwrap())
+                                    .is_le()
+                            });
+                            (left, right)
+                        }
+                    })
+                    .unzip();
                 let left = Self::build(arena, left, depth + 1);
                 let right = Self::build(arena, right, depth + 1);
                 arena.nodes[node].left = left;
