@@ -5,4 +5,4 @@ The goal is to eventually use these for bioinformatics — things like atom prox
 ## Chapters
 
 - **Chapter 1** — Convex hull
-- **Chapter 5** — 1D range searching with a static balanced BST and arena allocator. Next: 2D range trees, then kd-trees.
+- **Chapter 5** — 1D range searching with a static balanced BST; kd-tree with generic dimensions, orthogonal range search. Next: 2D range trees.
