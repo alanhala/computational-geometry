@@ -154,7 +154,8 @@ where
     }
 }
 
-type SortedAxes<T, const D: usize> = Vec<Vec<[T; D]>>;
+type SortedAxes<T, const D: usize> = Vec<Vec<Point<T, D>>>;
+type Point<T, const D: usize> = [T; D];
 
 #[derive(Debug)]
 pub struct KdTree<T, const D: usize>
@@ -163,7 +164,7 @@ where
     T: Clone,
     T: Copy,
 {
-    arena: Arena<[T; D]>,
+    arena: Arena<Point<T, D>>,
     root: usize,
 }
 
@@ -173,10 +174,10 @@ where
     T: Clone,
     T: Copy,
 {
-    pub fn new(points: Vec<[T; D]>) -> Self {
+    pub fn new(points: Vec<Point<T, D>>) -> Self {
         assert!(!points.is_empty(), "points must not be empty");
         let mut arena = Arena::new();
-        let sorted_by_axes: Vec<Vec<[T; D]>> = (0..D)
+        let sorted_by_axes: Vec<Vec<Point<T, D>>> = (0..D)
             .map(|i| {
                 let mut ax = points.clone();
                 ax.sort_by(|a, b| {
@@ -195,11 +196,7 @@ where
     where
         T: fmt::Debug,
     {
-        if self.arena.nodes[self.root].is_leaf() {
-            println!("{:?}", self.arena.nodes[self.root].value);
-        } else {
-            println!("*");
-        }
+        println!("{:?}", self.arena.nodes[self.root].value);
         if let Some(left) = self.arena.nodes[self.root].left {
             self.print_node(left, "", true);
         }
@@ -218,7 +215,7 @@ where
         if node.is_leaf() {
             println!("{}{}{:?}", prefix, connector, node.value);
         } else {
-            println!("{}{}*", prefix, connector);
+            println!("{}{}{:?}", prefix, connector, node.value);
         }
         if let Some(left) = node.left {
             self.print_node(left, &new_prefix, true);
@@ -228,7 +225,7 @@ where
         }
     }
 
-    fn build(arena: &mut Arena<[T; D]>, sorted_by_axes: Vec<Vec<[T; D]>>, depth: usize) -> Option<usize> {
+    fn build(arena: &mut Arena<Point<T, D>>, sorted_by_axes: Vec<Vec<Point<T, D>>>, depth: usize) -> Option<usize> {
         let axis = depth % D;
         match sorted_by_axes[axis].len() {
             0 => None,
@@ -244,13 +241,14 @@ where
                             let right = &sorted_by_axes[i][split + 1..];
                             (left.to_vec(), right.to_vec())
                         } else {
-                            let (left, right): (Vec<[T; D]>, Vec<[T; D]>) = sorted_by_axes[i].iter().partition(|p| {
-                                p[axis]
-                                    .partial_cmp(&median[axis])
-                                    .unwrap()
-                                    .then_with(|| p.partial_cmp(&median).unwrap())
-                                    .is_le()
-                            });
+                            let (left, right): (Vec<Point<T, D>>, Vec<Point<T, D>>) =
+                                sorted_by_axes[i].iter().partition(|p| {
+                                    p[axis]
+                                        .partial_cmp(&median[axis])
+                                        .unwrap()
+                                        .then_with(|| p.partial_cmp(&median).unwrap())
+                                        .is_le()
+                                });
                             (left, right)
                         }
                     })
