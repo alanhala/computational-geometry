@@ -1,4 +1,7 @@
-use std::fmt;
+use std::{collections::HashMap, fmt};
+
+type Id = usize;
+type Point<T, const D: usize> = [T; D];
 
 #[derive(Debug)]
 pub struct Arena<T> {
@@ -6,8 +9,9 @@ pub struct Arena<T> {
 }
 
 #[derive(Debug)]
-pub struct Node<T> {
-    pub value: T,
+struct Node<T> {
+    id: Id,
+    value: T,
     left: Option<usize>,
     right: Option<usize>,
 }
@@ -29,15 +33,15 @@ impl<T> Arena<T> {
         Arena { nodes: vec![] }
     }
 
-    pub fn add(&mut self, value: T) -> usize {
+    pub fn add(&mut self, id: Id, value: T) -> usize {
         self.nodes.push(Node {
+            id,
             value,
             left: None,
             right: None,
         });
         self.nodes.len() - 1
     }
-
 }
 
 fn fmt_bst_node<T: fmt::Display>(
@@ -99,10 +103,11 @@ where
     T: Ord,
     T: Copy,
 {
-    pub fn new(mut points: Vec<T>) -> Self {
-        points.sort();
+    pub fn new(points: HashMap<Id, T>) -> Self {
+        let mut sorted: Vec<(Id, T)> = points.into_iter().collect();
+        sorted.sort_by(|a, b| a.1.cmp(&b.1));
         let mut arena = Arena::new();
-        let root = Self::build(&mut arena, &points).expect("points must not be empty");
+        let root = Self::build(&mut arena, &sorted).expect("points must not be empty");
         Self { arena, root }
     }
 
@@ -118,26 +123,26 @@ where
         v
     }
 
-    pub fn range_query(&self, min: T, max: T) -> Vec<T> {
-        let mut reported_values: Vec<T> = vec![];
+    pub fn range_query(&self, min: T, max: T) -> Vec<Id> {
+        let mut reported: Vec<Id> = vec![];
         let split_node = self.find_split_node(min, max);
-        Self::report_tree(&self.arena, &mut reported_values, split_node, min, max);
-        reported_values
+        Self::report_tree(&self.arena, &mut reported, split_node, min, max);
+        reported
     }
 
-    fn report_tree(arena: &Arena<T>, reported_values: &mut Vec<T>, node: usize, min: T, max: T) {
+    fn report_tree(arena: &Arena<T>, reported: &mut Vec<Id>, node: usize, min: T, max: T) {
         let value = arena.nodes[node].value;
         if arena.nodes[node].is_leaf() {
             if value >= min && value <= max {
-                reported_values.push(value);
+                reported.push(arena.nodes[node].id);
             }
         } else if value >= min && value < max {
-            Self::report_tree(arena, reported_values, arena.nodes[node].left.unwrap(), min, max);
-            Self::report_tree(arena, reported_values, arena.nodes[node].right.unwrap(), min, max);
+            Self::report_tree(arena, reported, arena.nodes[node].left.unwrap(), min, max);
+            Self::report_tree(arena, reported, arena.nodes[node].right.unwrap(), min, max);
         } else if value < min {
-            Self::report_tree(arena, reported_values, arena.nodes[node].right.unwrap(), min, max);
+            Self::report_tree(arena, reported, arena.nodes[node].right.unwrap(), min, max);
         } else if value >= max {
-            Self::report_tree(arena, reported_values, arena.nodes[node].left.unwrap(), min, max);
+            Self::report_tree(arena, reported, arena.nodes[node].left.unwrap(), min, max);
         };
     }
 
@@ -154,17 +159,15 @@ where
         }
     }
 
-    fn build(arena: &mut Arena<T>, points: &[T]) -> Option<usize> {
+    fn build(arena: &mut Arena<T>, points: &[(Id, T)]) -> Option<usize> {
         match points.len() {
             0 => None,
-            1 => Some(arena.add(points[0])),
+            1 => Some(arena.add(points[0].0, points[0].1)),
             n => {
                 let split = (n - 1) / 2;
-                let left = &points[..=split];
-                let right = &points[split + 1..];
-                let node = arena.add(points[split]);
-                let left = Self::build(arena, left);
-                let right = Self::build(arena, right);
+                let node = arena.add(points[split].0, points[split].1);
+                let left = Self::build(arena, &points[..=split]);
+                let right = Self::build(arena, &points[split + 1..]);
                 arena.nodes[node].left = left;
                 arena.nodes[node].right = right;
                 Some(node)
@@ -190,9 +193,6 @@ where
     }
 }
 
-type SortedAxes<T, const D: usize> = Vec<Vec<Point<T, D>>>;
-type Point<T, const D: usize> = [T; D];
-
 #[derive(Debug)]
 pub struct KdTree<T, const D: usize>
 where
@@ -210,33 +210,34 @@ where
     T: Clone,
     T: Copy,
 {
-    pub fn new(points: Vec<Point<T, D>>) -> Self {
+    pub fn new(points: HashMap<Id, Point<T, D>>) -> Self {
         assert!(!points.is_empty(), "points must not be empty");
         let mut arena = Arena::new();
-        let sorted_by_axes: Vec<Vec<Point<T, D>>> = (0..D)
+        let sorted_by_axes: Vec<Vec<Id>> = (0..D)
             .map(|i| {
-                let mut ax = points.clone();
-                ax.sort_by(|a, b| {
-                    a[i].partial_cmp(&b[i])
+                let mut sorted_points: Vec<(&Id, &Point<T, D>)> = points.iter().collect();
+                sorted_points.sort_by(|a, b| {
+                    a.1[i]
+                        .partial_cmp(&b.1[i])
                         .unwrap()
-                        .then_with(|| a.iter().partial_cmp(b).unwrap())
+                        .then_with(|| a.1.iter().partial_cmp(b.1).unwrap())
                 });
-                ax
+                sorted_points.iter().map(|p| *p.0).collect()
             })
             .collect();
-        let root = Self::build(&mut arena, sorted_by_axes, 0).expect("points must not be empty");
+        let root = Self::build(&mut arena, &points, sorted_by_axes, 0).unwrap();
         Self { arena, root }
     }
 
-    pub fn search(&self, min: Point<T, D>, max: Point<T, D>) -> Vec<Point<T, D>> {
-        let mut reported_values: Vec<Point<T, D>> = vec![];
-        Self::report_tree(&self.arena, &mut reported_values, self.root, 0, min, max);
-        reported_values
+    pub fn search(&self, min: Point<T, D>, max: Point<T, D>) -> Vec<Id> {
+        let mut reported_nodes: Vec<Id> = vec![];
+        Self::report_tree(&self.arena, &mut reported_nodes, self.root, 0, min, max);
+        reported_nodes
     }
 
     fn report_tree(
         arena: &Arena<Point<T, D>>,
-        reported_values: &mut Vec<Point<T, D>>,
+        reported_nodes: &mut Vec<Id>,
         node: usize,
         depth: usize,
         min: Point<T, D>,
@@ -245,43 +246,15 @@ where
         let axis = depth % D;
         if arena.nodes[node].is_leaf() {
             if Self::point_contained(arena.nodes[node].value, min, max) {
-                reported_values.push(arena.nodes[node].value);
+                reported_nodes.push(arena.nodes[node].id);
             }
         } else if arena.nodes[node].value[axis] >= min[axis] && arena.nodes[node].value[axis] < max[axis] {
-            Self::report_tree(
-                arena,
-                reported_values,
-                arena.nodes[node].left.unwrap(),
-                depth + 1,
-                min,
-                max,
-            );
-            Self::report_tree(
-                arena,
-                reported_values,
-                arena.nodes[node].right.unwrap(),
-                depth + 1,
-                min,
-                max,
-            );
+            Self::report_tree(arena, reported_nodes, arena.nodes[node].left.unwrap(), depth + 1, min, max);
+            Self::report_tree(arena, reported_nodes, arena.nodes[node].right.unwrap(), depth + 1, min, max);
         } else if arena.nodes[node].value[axis] < min[axis] {
-            Self::report_tree(
-                arena,
-                reported_values,
-                arena.nodes[node].right.unwrap(),
-                depth + 1,
-                min,
-                max,
-            );
+            Self::report_tree(arena, reported_nodes, arena.nodes[node].right.unwrap(), depth + 1, min, max);
         } else if arena.nodes[node].value[axis] >= max[axis] {
-            Self::report_tree(
-                arena,
-                reported_values,
-                arena.nodes[node].left.unwrap(),
-                depth + 1,
-                min,
-                max,
-            );
+            Self::report_tree(arena, reported_nodes, arena.nodes[node].left.unwrap(), depth + 1, min, max);
         }
     }
 
@@ -293,36 +266,40 @@ where
             .all(|((vi, lo), hi)| vi >= lo && vi <= hi)
     }
 
-    fn build(arena: &mut Arena<Point<T, D>>, sorted_by_axes: Vec<Vec<Point<T, D>>>, depth: usize) -> Option<usize> {
+    fn build(
+        arena: &mut Arena<Point<T, D>>,
+        points: &HashMap<Id, Point<T, D>>,
+        sorted_by_axes: Vec<Vec<Id>>,
+        depth: usize,
+    ) -> Option<usize> {
         let axis = depth % D;
         match sorted_by_axes[axis].len() {
             0 => None,
-            1 => Some(arena.add(sorted_by_axes[axis][0])),
+            1 => Some(arena.add(sorted_by_axes[axis][0], points[&sorted_by_axes[axis][0]])),
             n => {
                 let split = (n - 1) / 2;
                 let median = &sorted_by_axes[axis][split];
-                let node = arena.add(*median);
-                let (left, right): (SortedAxes<T, D>, SortedAxes<T, D>) = (0..D)
+                let node = arena.add(sorted_by_axes[axis][split], points[median]);
+                let (left, right): (Vec<Vec<Id>>, Vec<Vec<Id>>) = (0..D)
                     .map(|i| {
                         if i == axis {
                             let left = &sorted_by_axes[i][0..=split];
                             let right = &sorted_by_axes[i][split + 1..];
                             (left.to_vec(), right.to_vec())
                         } else {
-                            let (left, right): (Vec<Point<T, D>>, Vec<Point<T, D>>) =
-                                sorted_by_axes[i].iter().partition(|p| {
-                                    p[axis]
-                                        .partial_cmp(&median[axis])
-                                        .unwrap()
-                                        .then_with(|| p.partial_cmp(&median).unwrap())
-                                        .is_le()
-                                });
+                            let (left, right): (Vec<Id>, Vec<Id>) = sorted_by_axes[i].iter().partition(|p| {
+                                points[p][axis]
+                                    .partial_cmp(&points[median][axis])
+                                    .unwrap()
+                                    .then_with(|| points[p].partial_cmp(&points[median]).unwrap())
+                                    .is_le()
+                            });
                             (left, right)
                         }
                     })
                     .unzip();
-                arena.nodes[node].left = Self::build(arena, left, depth + 1);
-                arena.nodes[node].right = Self::build(arena, right, depth + 1);
+                arena.nodes[node].left = Self::build(arena, &points, left, depth + 1);
+                arena.nodes[node].right = Self::build(arena, &points, right, depth + 1);
                 Some(node)
             }
         }
